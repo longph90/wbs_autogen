@@ -7,6 +7,7 @@ interface TaskData {
   id: string;
   name: string;
   effort: number;
+  effortDisplay?: string; // For handling input display
   startDate: string;
   endDate: string;
   percentComplete: string;
@@ -297,7 +298,7 @@ export default function Home() {
       // Update the changed task's effort
       updatedTasks[taskIndex] = { 
         ...updatedTasks[taskIndex], 
-        effort: Math.max(0.1, effort)
+        effort: Math.max(0.0, effort)
       };
       
       // Recalculate ALL tasks from scratch to ensure consistency
@@ -317,7 +318,7 @@ export default function Home() {
               if (task.startDate) {
                 const newEndDate = calculateEndDate(task.startDate, task.effort);
                 const newRemainingEffort = calculateRemainingEffortInEndDay(task.effort, 0);
-                if (result[i].endDate !== newEndDate) {
+                if (result[i].endDate !== newEndDate || result[i].remainingEffortInEndDay !== newRemainingEffort) {
                   result[i] = {
                     ...result[i],
                     endDate: newEndDate,
@@ -366,7 +367,7 @@ export default function Home() {
               const newEndDate = calculateEndDate(newStartDate, task.effort, nextAvailable.usedEffortInStartDay);
               const newRemainingEffort = calculateRemainingEffortInEndDay(task.effort, latestDependencyRemainingEffort);
               
-              if (result[i].startDate !== newStartDate || result[i].endDate !== newEndDate) {
+              if (result[i].startDate !== newStartDate || result[i].endDate !== newEndDate || result[i].remainingEffortInEndDay !== newRemainingEffort) {
                 result[i] = {
                   ...result[i],
                   startDate: newStartDate,
@@ -391,6 +392,33 @@ export default function Home() {
     });
   };
 
+  const handleEffortInputChange = (taskId: string, inputValue: string) => {
+    // Update the display value immediately for better UX
+    setTasks(prev => {
+      const updatedTasks = [...prev];
+      const taskIndex = updatedTasks.findIndex(t => t.id === taskId);
+      if (taskIndex !== -1) {
+        updatedTasks[taskIndex] = { 
+          ...updatedTasks[taskIndex], 
+          effortDisplay: inputValue
+        };
+      }
+      return updatedTasks;
+    });
+
+    // Parse the input value for calculation
+    const parsedValue = parseFloat(inputValue);
+    
+    // If it's a valid number (including decimals), use handleEffortChange to recalculate
+    if (!isNaN(parsedValue) && isFinite(parsedValue) && inputValue !== '') {
+      handleEffortChange(taskId, Math.max(0.0, parsedValue));
+    } else if (inputValue === '') {
+      // If input is empty, set effort to 0 and recalculate
+      handleEffortChange(taskId, 0);
+    }
+    // Allow partial decimal input like "1." or "0." without triggering recalculation
+  };
+
   const generateWBS = () => {
     if (!formData.ticketID || !formData.developer || !formData.ba || !formData.startDate) {
       alert('Please fill in all required fields');
@@ -402,6 +430,7 @@ export default function Home() {
         id: 'design',
         name: 'Task Design',
         effort: 1,
+        effortDisplay: '1',
         startDate: formData.startDate,
         endDate: calculateEndDate(formData.startDate, 1),
         percentComplete: '',
@@ -413,6 +442,7 @@ export default function Home() {
         id: 'coding',
         name: 'Task Coding',
         effort: 1,
+        effortDisplay: '1',
         startDate: '',
         endDate: '',
         percentComplete: '',
@@ -424,6 +454,7 @@ export default function Home() {
         id: 'unittest',
         name: 'Task Unit Test',
         effort: 1,
+        effortDisplay: '1',
         startDate: '',
         endDate: '',
         percentComplete: '',
@@ -435,6 +466,7 @@ export default function Home() {
         id: 'functiontest',
         name: 'Task Function Test',
         effort: 1,
+        effortDisplay: '1',
         startDate: '',
         endDate: '',
         percentComplete: '',
@@ -446,6 +478,7 @@ export default function Home() {
         id: 'uatsupport',
         name: 'Task UAT & Support',
         effort: 1,
+        effortDisplay: '1',
         startDate: '',
         endDate: '',
         percentComplete: '',
@@ -457,6 +490,7 @@ export default function Home() {
         id: 'golive',
         name: 'Task Conduct Go-live',
         effort: 1,
+        effortDisplay: '1',
         startDate: '', // Should be calculated from dependencies
         endDate: '',
         percentComplete: '',
@@ -483,7 +517,7 @@ export default function Home() {
             if (task.startDate) {
               const newEndDate = calculateEndDate(task.startDate, task.effort);
               const newRemainingEffort = calculateRemainingEffortInEndDay(task.effort, 0);
-              if (updatedTasks[i].endDate !== newEndDate) {
+              if (updatedTasks[i].endDate !== newEndDate || updatedTasks[i].remainingEffortInEndDay !== newRemainingEffort) {
                 updatedTasks[i] = {
                   ...updatedTasks[i],
                   endDate: newEndDate,
@@ -525,7 +559,7 @@ export default function Home() {
               const newEndDate = calculateEndDate(newStartDate, task.effort, nextAvailable.usedEffortInStartDay);
               const newRemainingEffort = calculateRemainingEffortInEndDay(task.effort, latestDependencyRemainingEffort);
               
-              if (updatedTasks[i].startDate !== newStartDate || updatedTasks[i].endDate !== newEndDate) {
+              if (updatedTasks[i].startDate !== newStartDate || updatedTasks[i].endDate !== newEndDate || updatedTasks[i].remainingEffortInEndDay !== newRemainingEffort) {
                 updatedTasks[i] = {
                   ...updatedTasks[i],
                   startDate: newStartDate,
@@ -705,12 +739,11 @@ export default function Home() {
                       </td>
                       <td className="border border-slate-600 px-4 py-2">
                         <input
-                          type="number"
-                          min="0.1"
-                          step="0.1"
-                          value={task.effort}
-                          onChange={(e) => handleEffortChange(task.id, parseFloat(e.target.value) || 0.1)}
+                          type="text"
+                          value={task.effortDisplay !== undefined ? task.effortDisplay : task.effort.toString()}
+                          onChange={(e) => handleEffortInputChange(task.id, e.target.value)}
                           className="w-full px-2 py-1 bg-slate-700 border border-slate-500 rounded text-center text-white focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+                          placeholder="0"
                         />
                       </td>
                       <td className="border border-slate-600 px-4 py-2 text-slate-200">
