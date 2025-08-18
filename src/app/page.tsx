@@ -17,13 +17,17 @@ interface TaskData {
   programName?: string; // Program this task belongs to
 }
 
-interface FormData {
-  ticketID: string;
+interface ProgramData {
+  name: string;
   developer: string;
   ba: string;
   startDate: string;
+}
+
+interface FormData {
+  ticketID: string;
   programCount: number;
-  programNames: string[];
+  programs: ProgramData[];
 }
 
 interface EffortSummary {
@@ -44,11 +48,8 @@ interface ProgramSummary {
 export default function Home() {
   const [formData, setFormData] = useState<FormData>({
     ticketID: '',
-    developer: '',
-    ba: '',
-    startDate: '',
     programCount: 1,
-    programNames: ['']
+    programs: [{ name: 'Program 1', developer: '', ba: '', startDate: '' }]
   });
   
   const [tasks, setTasks] = useState<TaskData[]>([]);
@@ -80,8 +81,8 @@ export default function Home() {
 
   // Function to calculate effort summary by program
   const calculateProgramSummaries = (tasks: TaskData[]): ProgramSummary[] => {
-    return formData.programNames.map(programName => {
-      const programTasks = tasks.filter(task => task.programName === programName);
+    return formData.programs.map(program => {
+      const programTasks = tasks.filter(task => task.programName === program.name);
       
       const developmentPhase = programTasks
         .filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest'))
@@ -98,7 +99,7 @@ export default function Home() {
       const total = developmentPhase + uatSupport + goLive;
       
       return {
-        programName,
+        programName: program.name,
         developmentPhase,
         uatSupport,
         goLive,
@@ -115,9 +116,9 @@ export default function Home() {
     }
     
     // Group tasks by program
-    const programGroups = formData.programNames.map(programName => ({
-      programName,
-      tasks: tasks.filter(task => task.programName === programName)
+    const programGroups = formData.programs.map(program => ({
+      programName: program.name,
+      tasks: tasks.filter(task => task.programName === program.name)
     }));
     
     // Create structured data with indentation
@@ -375,8 +376,13 @@ export default function Home() {
       setFormData(prev => ({
         ...prev,
         programCount: count,
-        programNames: Array.from({ length: count }, (_, index) => 
-          prev.programNames[index] || `Program ${index + 1}`
+        programs: Array.from({ length: count }, (_, index) => 
+          prev.programs[index] || { 
+            name: `Program ${index + 1}`, 
+            developer: '', 
+            ba: '', 
+            startDate: '' 
+          }
         )
       }));
     } else {
@@ -387,11 +393,11 @@ export default function Home() {
     }
   };
 
-  const handleProgramNameChange = (index: number, name: string) => {
+  const handleProgramChange = (index: number, field: keyof ProgramData, value: string) => {
     setFormData(prev => ({
       ...prev,
-      programNames: prev.programNames.map((programName, i) => 
-        i === index ? name : programName
+      programs: prev.programs.map((program, i) => 
+        i === index ? { ...program, [field]: value } : program
       )
     }));
   };
@@ -528,100 +534,102 @@ export default function Home() {
   };
 
   const generateWBS = () => {
-    if (!formData.ticketID || !formData.developer || !formData.ba || !formData.startDate) {
-      alert('Please fill in all required fields');
+    if (!formData.ticketID) {
+      alert('Please fill in Ticket ID');
       return;
     }
 
-    // Validate that all program names are filled
-    const hasEmptyProgramNames = formData.programNames.some(name => !name.trim());
-    if (hasEmptyProgramNames) {
-      alert('Please fill in all program names');
+    // Validate that all program data is filled
+    const hasIncompletePrograms = formData.programs.some(program => 
+      !program.name.trim() || !program.developer.trim() || !program.ba.trim() || !program.startDate
+    );
+    if (hasIncompletePrograms) {
+      alert('Please fill in all program information (Name, Developer, BA, Start Date)');
       return;
     }
 
     const allTasks: TaskData[] = [];
 
     // Generate tasks for each program
-    formData.programNames.forEach((programName, programIndex) => {
+    formData.programs.forEach((program) => {
       const programTasks: TaskData[] = [
         {
-          id: `${programName}-design`,
-          name: `${programName} - Task Design`,
+          id: `${program.name}-design`,
+          name: `${program.name} - Task Design`,
           effort: 1,
           effortDisplay: '1',
-          startDate: programIndex === 0 ? formData.startDate : '', // Only first program starts on the given date
+          startDate: program.startDate,
           endDate: '',
           percentComplete: '',
-          resourceName: formData.ba,
-          dependencies: programIndex === 0 ? [] : [`${formData.programNames[programIndex - 1]}-golive`], // Depend on previous program's go-live
+          resourceName: program.ba,
+          dependencies: [],
           remainingEffortInEndDay: 0,
-          programName: programName
+          programName: program.name
         },
         {
-          id: `${programName}-coding`,
-          name: `${programName} - Task Coding`,
-          effort: 1,
-          effortDisplay: '1',
-          startDate: '',
-          endDate: '',
-          percentComplete: '',
-          resourceName: formData.developer,
-          dependencies: [`${programName}-design`],
-          remainingEffortInEndDay: 0,
-          programName: programName
-        },
-        {
-          id: `${programName}-unittest`,
-          name: `${programName} - Task Unit Test`,
+          id: `${program.name}-coding`,
+          name: `${program.name} - Task Coding`,
           effort: 1,
           effortDisplay: '1',
           startDate: '',
           endDate: '',
           percentComplete: '',
-          resourceName: formData.developer,
-          dependencies: [`${programName}-coding`],
+          resourceName: program.developer,
+          dependencies: [`${program.name}-design`],
           remainingEffortInEndDay: 0,
-          programName: programName
+          programName: program.name
         },
         {
-          id: `${programName}-functiontest`,
-          name: `${programName} - Task Function Test`,
+          id: `${program.name}-unittest`,
+          name: `${program.name} - Task Unit Test`,
           effort: 1,
           effortDisplay: '1',
           startDate: '',
           endDate: '',
           percentComplete: '',
-          resourceName: formData.ba,
-          dependencies: [`${programName}-unittest`],
+          resourceName: program.developer,
+          dependencies: [`${program.name}-coding`],
           remainingEffortInEndDay: 0,
-          programName: programName
+          programName: program.name
         },
         {
-          id: `${programName}-uatsupport`,
-          name: `${programName} - Task UAT & Support`,
+          id: `${program.name}-functiontest`,
+          name: `${program.name} - Task Function Test`,
           effort: 1,
           effortDisplay: '1',
           startDate: '',
           endDate: '',
           percentComplete: '',
-          resourceName: '',
-          dependencies: [`${programName}-functiontest`],
+          resourceName: program.ba,
+          dependencies: [`${program.name}-unittest`],
           remainingEffortInEndDay: 0,
-          programName: programName
+          programName: program.name
         },
         {
-          id: `${programName}-golive`,
-          name: `${programName} - Task Conduct Go-live`,
+          id: `${program.name}-uatsupport`,
+          name: `${program.name} - Task UAT & Support`,
           effort: 1,
           effortDisplay: '1',
           startDate: '',
           endDate: '',
           percentComplete: '',
           resourceName: '',
-          dependencies: [`${programName}-uatsupport`],
+          dependencies: [`${program.name}-functiontest`],
           remainingEffortInEndDay: 0,
-          programName: programName
+          programName: program.name
+        },
+        {
+          id: `${program.name}-golive`,
+          name: `${program.name} - Task Conduct Go-live`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: '',
+          dependencies: [`${program.name}-uatsupport`],
+          remainingEffortInEndDay: 0,
+          programName: program.name
         }
       ];
 
@@ -722,7 +730,7 @@ export default function Home() {
         {/* Input Form */}
         <div className="bg-slate-800 p-6 rounded-lg shadow-xl mb-8 border border-slate-700">
           <h2 className="text-xl font-semibold mb-4 text-white">Project Parameters</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
                 Ticket ID *
@@ -739,47 +747,6 @@ export default function Home() {
             
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
-                Developer *
-              </label>
-              <input
-                type="text"
-                name="developer"
-                value={formData.developer}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
-                placeholder="Enter developer name"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">
-                BA *
-              </label>
-              <input
-                type="text"
-                name="ba"
-                value={formData.ba}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
-                placeholder="Enter BA name"
-              />
-            </div>
-            
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">
-                Start Date *
-              </label>
-              <input
-                type="date"
-                name="startDate"
-                value={formData.startDate}
-                onChange={handleInputChange}
-                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white"
-              />
-            </div>
-
-            <div className="md:col-span-2 lg:col-span-4">
-              <label className="block text-sm font-medium text-slate-300 mb-1">
                 Number of Programs *
               </label>
               <input
@@ -789,32 +756,73 @@ export default function Home() {
                 onChange={handleInputChange}
                 min="1"
                 max="10"
-                className="w-full max-w-xs px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
                 placeholder="Enter number of programs"
               />
             </div>
           </div>
 
-          {/* Program Names Section */}
+          {/* Program Details Section */}
           {formData.programCount > 0 && (
-            <div className="mt-6">
-              <h3 className="text-lg font-medium text-slate-200 mb-3">Program Names</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {formData.programNames.map((programName, index) => (
-                  <div key={index}>
-                    <label className="block text-sm font-medium text-slate-300 mb-1">
-                      Program {index + 1} Name *
-                    </label>
-                    <input
-                      type="text"
-                      value={programName}
-                      onChange={(e) => handleProgramNameChange(index, e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
-                      placeholder={`Enter program ${index + 1} name`}
-                    />
+            <div className="space-y-6">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Program Details</h3>
+              {formData.programs.map((program, index) => (
+                <div key={index} className="bg-slate-700 p-4 rounded-lg border border-slate-600">
+                  <h4 className="text-md font-medium text-slate-100 mb-3">Program {index + 1}</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                        Program Name *
+                      </label>
+                      <input
+                        type="text"
+                        value={program.name}
+                        onChange={(e) => handleProgramChange(index, 'name', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                        placeholder={`Enter program ${index + 1} name`}
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                        Developer *
+                      </label>
+                      <input
+                        type="text"
+                        value={program.developer}
+                        onChange={(e) => handleProgramChange(index, 'developer', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                        placeholder="Enter developer name"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                        BA *
+                      </label>
+                      <input
+                        type="text"
+                        value={program.ba}
+                        onChange={(e) => handleProgramChange(index, 'ba', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                        placeholder="Enter BA name"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-slate-300 mb-1">
+                        Start Date *
+                      </label>
+                      <input
+                        type="date"
+                        value={program.startDate}
+                        onChange={(e) => handleProgramChange(index, 'startDate', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white"
+                      />
+                    </div>
                   </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           )}
           
