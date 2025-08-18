@@ -14,6 +14,7 @@ interface TaskData {
   resourceName: string;
   dependencies: string[]; // Array of task IDs this task depends on
   remainingEffortInEndDay?: number; // Remaining effort available in the end day
+  programName?: string; // Program this task belongs to
 }
 
 interface FormData {
@@ -21,6 +22,8 @@ interface FormData {
   developer: string;
   ba: string;
   startDate: string;
+  programCount: number;
+  programNames: string[];
 }
 
 interface EffortSummary {
@@ -30,12 +33,22 @@ interface EffortSummary {
   total: number;
 }
 
+interface ProgramSummary {
+  programName: string;
+  developmentPhase: number;
+  uatSupport: number;
+  goLive: number;
+  total: number;
+}
+
 export default function Home() {
   const [formData, setFormData] = useState<FormData>({
     ticketID: '',
     developer: '',
     ba: '',
-    startDate: ''
+    startDate: '',
+    programCount: 1,
+    programNames: ['']
   });
   
   const [tasks, setTasks] = useState<TaskData[]>([]);
@@ -44,15 +57,15 @@ export default function Home() {
   // Function to calculate effort summary
   const calculateEffortSummary = (tasks: TaskData[]): EffortSummary => {
     const developmentPhase = tasks
-      .filter(task => ['design', 'coding', 'unittest', 'functiontest'].includes(task.id))
+      .filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest'))
       .reduce((sum, task) => sum + task.effort, 0);
     
     const uatSupport = tasks
-      .filter(task => task.id === 'uatsupport')
+      .filter(task => task.id.endsWith('-uatsupport'))
       .reduce((sum, task) => sum + task.effort, 0);
     
     const goLive = tasks
-      .filter(task => task.id === 'golive')
+      .filter(task => task.id.endsWith('-golive'))
       .reduce((sum, task) => sum + task.effort, 0);
     
     const total = developmentPhase + uatSupport + goLive;
@@ -65,14 +78,47 @@ export default function Home() {
     };
   };
 
+  // Function to calculate effort summary by program
+  const calculateProgramSummaries = (tasks: TaskData[]): ProgramSummary[] => {
+    return formData.programNames.map(programName => {
+      const programTasks = tasks.filter(task => task.programName === programName);
+      
+      const developmentPhase = programTasks
+        .filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest'))
+        .reduce((sum, task) => sum + task.effort, 0);
+      
+      const uatSupport = programTasks
+        .filter(task => task.id.endsWith('-uatsupport'))
+        .reduce((sum, task) => sum + task.effort, 0);
+      
+      const goLive = programTasks
+        .filter(task => task.id.endsWith('-golive'))
+        .reduce((sum, task) => sum + task.effort, 0);
+      
+      const total = developmentPhase + uatSupport + goLive;
+      
+      return {
+        programName,
+        developmentPhase,
+        uatSupport,
+        goLive,
+        total
+      };
+    });
+  };
+
   // Function to export to Excel
   const exportToExcel = () => {
     if (tasks.length === 0) {
       alert('No WBS data to export');
       return;
     }
-
-    const summary = calculateEffortSummary(tasks);
+    
+    // Group tasks by program
+    const programGroups = formData.programNames.map(programName => ({
+      programName,
+      tasks: tasks.filter(task => task.programName === programName)
+    }));
     
     // Create structured data with indentation
     const excelData = [
@@ -84,68 +130,106 @@ export default function Home() {
         'End Date': '',
         '% Complete': '',
         'Resource Name': ''
-      },
-      // Row 2: Phase I - Update logic report
-      {
-        'Task Name': '\tI.Update logic report',
-        'Effort (Days)': summary.developmentPhase,
-        'Start Date': '',
-        'End Date': '',
-        '% Complete': '',
-        'Resource Name': ''
-      },
-      // Rows 3-6: Development tasks (design, coding, unittest, functiontest)
-      ...tasks
-        .filter(task => ['design', 'coding', 'unittest', 'functiontest'].includes(task.id))
-        .map(task => ({
-          'Task Name': `\t\t${task.name}`,
-          'Effort (Days)': task.effort,
-          'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
-          'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
-          '% Complete': task.percentComplete || '0%',
-          'Resource Name': task.resourceName || ''
-        })),
-      // Row 7: Phase II - UAT & Support
-      {
-        'Task Name': '\tII.UAT & Support',
-        'Effort (Days)': summary.uatSupport,
-        'Start Date': '',
-        'End Date': '',
-        '% Complete': '',
-        'Resource Name': ''
-      },
-      // Row 8: UAT & Support task details
-      ...tasks
-        .filter(task => task.id === 'uatsupport')
-        .map(task => ({
-          'Task Name': `\t\t${task.name}`,
-          'Effort (Days)': task.effort,
-          'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
-          'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
-          '% Complete': task.percentComplete || '0%',
-          'Resource Name': task.resourceName || ''
-        })),
-      // Row 9: Phase III - Go Live
-      {
-        'Task Name': '\tIII.Go Live',
-        'Effort (Days)': summary.goLive,
-        'Start Date': '',
-        'End Date': '',
-        '% Complete': '',
-        'Resource Name': ''
-      },
-      // Row 10: Go Live task details
-      ...tasks
-        .filter(task => task.id === 'golive')
-        .map(task => ({
-          'Task Name': `\t\t${task.name}`,
-          'Effort (Days)': task.effort,
-          'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
-          'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
-          '% Complete': task.percentComplete || '0%',
-          'Resource Name': task.resourceName || ''
-        }))
+      }
     ];
+
+    // Add each program as a section
+    programGroups.forEach((group) => {
+      if (group.tasks.length === 0) return;
+
+      const programTasks = group.tasks;
+      const programDevEffort = programTasks
+        .filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest'))
+        .reduce((sum, task) => sum + task.effort, 0);
+      const programUatEffort = programTasks
+        .filter(task => task.id.endsWith('-uatsupport'))
+        .reduce((sum, task) => sum + task.effort, 0);
+      const programGoLiveEffort = programTasks
+        .filter(task => task.id.endsWith('-golive'))
+        .reduce((sum, task) => sum + task.effort, 0);
+
+      // Program header
+      excelData.push({
+        'Task Name': `${group.programName}`,
+        'Effort (Days)': (programDevEffort + programUatEffort + programGoLiveEffort).toString(),
+        'Start Date': '',
+        'End Date': '',
+        '% Complete': '',
+        'Resource Name': ''
+      });
+
+      // Phase I - Update logic report
+      excelData.push({
+        'Task Name': '\tI.Update logic report',
+        'Effort (Days)': programDevEffort.toString(),
+        'Start Date': '',
+        'End Date': '',
+        '% Complete': '',
+        'Resource Name': ''
+      });
+
+      // Development tasks
+      programTasks
+        .filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest'))
+        .forEach(task => {
+          excelData.push({
+            'Task Name': `\t\t${task.name}`,
+            'Effort (Days)': task.effort.toString(),
+            'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
+            'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
+            '% Complete': task.percentComplete || '0%',
+            'Resource Name': task.resourceName || ''
+          });
+        });
+
+      // Phase II - UAT & Support
+      excelData.push({
+        'Task Name': '\tII.UAT & Support',
+        'Effort (Days)': programUatEffort.toString(),
+        'Start Date': '',
+        'End Date': '',
+        '% Complete': '',
+        'Resource Name': ''
+      });
+
+      // UAT & Support task details
+      programTasks
+        .filter(task => task.id.endsWith('-uatsupport'))
+        .forEach(task => {
+          excelData.push({
+            'Task Name': `\t\t${task.name}`,
+            'Effort (Days)': task.effort.toString(),
+            'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
+            'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
+            '% Complete': task.percentComplete || '0%',
+            'Resource Name': task.resourceName || ''
+          });
+        });
+
+      // Phase III - Go Live
+      excelData.push({
+        'Task Name': '\tIII.Go Live',
+        'Effort (Days)': programGoLiveEffort.toString(),
+        'Start Date': '',
+        'End Date': '',
+        '% Complete': '',
+        'Resource Name': ''
+      });
+
+      // Go Live task details
+      programTasks
+        .filter(task => task.id.endsWith('-golive'))
+        .forEach(task => {
+          excelData.push({
+            'Task Name': `\t\t${task.name}`,
+            'Effort (Days)': task.effort.toString(),
+            'Start Date': task.startDate ? new Date(task.startDate).toLocaleDateString() : '',
+            'End Date': task.endDate ? new Date(task.endDate).toLocaleDateString() : '',
+            '% Complete': task.percentComplete || '0%',
+            'Resource Name': task.resourceName || ''
+          });
+        });
+    });
 
     // Create workbook and worksheet
     const wb = XLSX.utils.book_new();
@@ -180,26 +264,29 @@ export default function Home() {
       }
     };
 
-    // Apply bold to header row (row 0)
+    // Apply bold to header row (row 0) and program headers
     applyBoldToRow(0);
-
-    // Calculate the actual row positions in the data
-    let currentDataRow = 1; // Start after header row
     
-    // Row 1: Ticket ID - Bold
-    applyBoldToRow(currentDataRow);
-    currentDataRow++;
-    
-    // Row 2: Phase I - Bold
-    applyBoldToRow(currentDataRow);
-    currentDataRow += 1 + tasks.filter(task => ['design', 'coding', 'unittest', 'functiontest'].includes(task.id)).length;
-    
-    // Phase II row - Bold
-    applyBoldToRow(currentDataRow);
-    currentDataRow += 1 + tasks.filter(task => task.id === 'uatsupport').length;
-    
-    // Phase III row - Bold
-    applyBoldToRow(currentDataRow);
+    let currentRow = 1;
+    programGroups.forEach((group) => {
+      if (group.tasks.length === 0) return;
+      
+      // Program header - Bold
+      applyBoldToRow(currentRow);
+      currentRow++;
+      
+      // Phase I header - Bold
+      applyBoldToRow(currentRow);
+      currentRow += 1 + group.tasks.filter(task => task.id.endsWith('-design') || task.id.endsWith('-coding') || task.id.endsWith('-unittest') || task.id.endsWith('-functiontest')).length;
+      
+      // Phase II header - Bold
+      applyBoldToRow(currentRow);
+      currentRow += 1 + group.tasks.filter(task => task.id.endsWith('-uatsupport')).length;
+      
+      // Phase III header - Bold
+      applyBoldToRow(currentRow);
+      currentRow += 1 + group.tasks.filter(task => task.id.endsWith('-golive')).length;
+    });
 
     // Add worksheet to workbook
     XLSX.utils.book_append_sheet(wb, ws, 'WBS Tasks');
@@ -282,9 +369,30 @@ export default function Home() {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    
+    if (name === 'programCount') {
+      const count = Math.max(1, parseInt(value) || 1);
+      setFormData(prev => ({
+        ...prev,
+        programCount: count,
+        programNames: Array.from({ length: count }, (_, index) => 
+          prev.programNames[index] || `Program ${index + 1}`
+        )
+      }));
+    } else {
+      setFormData(prev => ({
+        ...prev,
+        [name]: value
+      }));
+    }
+  };
+
+  const handleProgramNameChange = (index: number, name: string) => {
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      programNames: prev.programNames.map((programName, i) => 
+        i === index ? name : programName
+      )
     }));
   };
 
@@ -425,87 +533,107 @@ export default function Home() {
       return;
     }
 
-    const baseTasks: TaskData[] = [
-      {
-        id: 'design',
-        name: 'Task Design',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: formData.startDate,
-        endDate: calculateEndDate(formData.startDate, 1),
-        percentComplete: '',
-        resourceName: formData.ba,
-        dependencies: [],
-        remainingEffortInEndDay: calculateRemainingEffortInEndDay(1, 0)
-      },
-      {
-        id: 'coding',
-        name: 'Task Coding',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: '',
-        endDate: '',
-        percentComplete: '',
-        resourceName: formData.developer,
-        dependencies: ['design'],
-        remainingEffortInEndDay: 0
-      },
-      {
-        id: 'unittest',
-        name: 'Task Unit Test',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: '',
-        endDate: '',
-        percentComplete: '',
-        resourceName: formData.developer,
-        dependencies: ['coding'],
-        remainingEffortInEndDay: 0
-      },
-      {
-        id: 'functiontest',
-        name: 'Task Function Test',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: '',
-        endDate: '',
-        percentComplete: '',
-        resourceName: formData.ba,
-        dependencies: ['unittest'],
-        remainingEffortInEndDay: 0
-      },
-      {
-        id: 'uatsupport',
-        name: 'Task UAT & Support',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: '',
-        endDate: '',
-        percentComplete: '',
-        resourceName: '',
-        dependencies: ['functiontest'],
-        remainingEffortInEndDay: 0
-      },
-      {
-        id: 'golive',
-        name: 'Task Conduct Go-live',
-        effort: 1,
-        effortDisplay: '1',
-        startDate: '', // Should be calculated from dependencies
-        endDate: '',
-        percentComplete: '',
-        resourceName: '',
-        dependencies: ['uatsupport'],
-        remainingEffortInEndDay: 0
-      }
-    ];
+    // Validate that all program names are filled
+    const hasEmptyProgramNames = formData.programNames.some(name => !name.trim());
+    if (hasEmptyProgramNames) {
+      alert('Please fill in all program names');
+      return;
+    }
+
+    const allTasks: TaskData[] = [];
+
+    // Generate tasks for each program
+    formData.programNames.forEach((programName, programIndex) => {
+      const programTasks: TaskData[] = [
+        {
+          id: `${programName}-design`,
+          name: `${programName} - Task Design`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: programIndex === 0 ? formData.startDate : '', // Only first program starts on the given date
+          endDate: '',
+          percentComplete: '',
+          resourceName: formData.ba,
+          dependencies: programIndex === 0 ? [] : [`${formData.programNames[programIndex - 1]}-golive`], // Depend on previous program's go-live
+          remainingEffortInEndDay: 0,
+          programName: programName
+        },
+        {
+          id: `${programName}-coding`,
+          name: `${programName} - Task Coding`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: formData.developer,
+          dependencies: [`${programName}-design`],
+          remainingEffortInEndDay: 0,
+          programName: programName
+        },
+        {
+          id: `${programName}-unittest`,
+          name: `${programName} - Task Unit Test`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: formData.developer,
+          dependencies: [`${programName}-coding`],
+          remainingEffortInEndDay: 0,
+          programName: programName
+        },
+        {
+          id: `${programName}-functiontest`,
+          name: `${programName} - Task Function Test`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: formData.ba,
+          dependencies: [`${programName}-unittest`],
+          remainingEffortInEndDay: 0,
+          programName: programName
+        },
+        {
+          id: `${programName}-uatsupport`,
+          name: `${programName} - Task UAT & Support`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: '',
+          dependencies: [`${programName}-functiontest`],
+          remainingEffortInEndDay: 0,
+          programName: programName
+        },
+        {
+          id: `${programName}-golive`,
+          name: `${programName} - Task Conduct Go-live`,
+          effort: 1,
+          effortDisplay: '1',
+          startDate: '',
+          endDate: '',
+          percentComplete: '',
+          resourceName: '',
+          dependencies: [`${programName}-uatsupport`],
+          remainingEffortInEndDay: 0,
+          programName: programName
+        }
+      ];
+
+      allTasks.push(...programTasks);
+    });
 
     // Calculate all task dates based on dependencies
     const calculateAllTaskDates = (tasks: TaskData[]) => {
       const updatedTasks = [...tasks];
       
       // Multiple passes to handle cascading dependencies
-      for (let pass = 0; pass < 10; pass++) {
+      for (let pass = 0; pass < 20; pass++) { // Increased passes for multiple programs
         let hasChanges = false;
         
         // Process all tasks in each pass
@@ -579,14 +707,14 @@ export default function Home() {
       return updatedTasks;
     };
 
-    const finalTasks = calculateAllTaskDates(baseTasks);
+    const finalTasks = calculateAllTaskDates(allTasks);
     setTasks(finalTasks);
     setShowWBS(true);
   };
 
   return (
     <div className="min-h-screen p-8 bg-slate-900">
-      <div className="max-w-4xl mx-auto">
+      <div className="w-full max-w-none mx-auto px-4 lg:px-8">
         <h1 className="text-3xl font-bold text-center mb-8 text-white">
           WBS Auto Generator
         </h1>
@@ -594,7 +722,7 @@ export default function Home() {
         {/* Input Form */}
         <div className="bg-slate-800 p-6 rounded-lg shadow-xl mb-8 border border-slate-700">
           <h2 className="text-xl font-semibold mb-4 text-white">Project Parameters</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1">
                 Ticket ID *
@@ -649,7 +777,46 @@ export default function Home() {
                 className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white"
               />
             </div>
+
+            <div className="md:col-span-2 lg:col-span-4">
+              <label className="block text-sm font-medium text-slate-300 mb-1">
+                Number of Programs *
+              </label>
+              <input
+                type="number"
+                name="programCount"
+                value={formData.programCount}
+                onChange={handleInputChange}
+                min="1"
+                max="10"
+                className="w-full max-w-xs px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                placeholder="Enter number of programs"
+              />
+            </div>
           </div>
+
+          {/* Program Names Section */}
+          {formData.programCount > 0 && (
+            <div className="mt-6">
+              <h3 className="text-lg font-medium text-slate-200 mb-3">Program Names</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {formData.programNames.map((programName, index) => (
+                  <div key={index}>
+                    <label className="block text-sm font-medium text-slate-300 mb-1">
+                      Program {index + 1} Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={programName}
+                      onChange={(e) => handleProgramNameChange(index, e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-700 border border-slate-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent text-white placeholder-slate-400"
+                      placeholder={`Enter program ${index + 1} name`}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           
           <button
             onClick={generateWBS}
@@ -662,44 +829,92 @@ export default function Home() {
         {/* WBS Tasks Table */}
         {showWBS && (
           <>
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+            {/* Program Summary Cards */}
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold mb-4 text-white">Effort Summary by Program</h2>
+              
               {(() => {
-                const summary = calculateEffortSummary(tasks);
+                const programSummaries = calculateProgramSummaries(tasks);
+                const totalSummary = calculateEffortSummary(tasks);
+                
                 return (
-                  <>
-                    <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 rounded-lg shadow-xl border border-blue-500">
-                      <h3 className="text-lg font-semibold text-white mb-2">Development Phase</h3>
-                      <p className="text-sm text-blue-100 mb-2">Design + Coding + Unit Test + Function Test</p>
-                      <p className="text-3xl font-bold text-white">{summary.developmentPhase.toFixed(1)}</p>
-                      <p className="text-sm text-blue-100">days</p>
+                  <div className="space-y-6">
+                    {programSummaries.map((program) => (
+                      <div key={program.programName} className="bg-slate-800 p-6 rounded-lg shadow-xl border border-slate-700">
+                        <h3 className="text-lg font-semibold text-white mb-4">{program.programName}</h3>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 rounded-lg border border-blue-500">
+                            <h4 className="text-sm font-medium text-blue-100 mb-1">Development Phase</h4>
+                            <p className="text-xs text-blue-200 mb-2">Design + Coding + Unit Test + Function Test</p>
+                            <p className="text-2xl font-bold text-white">{program.developmentPhase.toFixed(1)}</p>
+                            <p className="text-xs text-blue-100">days</p>
+                          </div>
+                          
+                          <div className="bg-gradient-to-r from-green-600 to-green-700 p-4 rounded-lg border border-green-500">
+                            <h4 className="text-sm font-medium text-green-100 mb-1">UAT & Support</h4>
+                            <p className="text-xs text-green-200 mb-2">User Acceptance Testing & Support</p>
+                            <p className="text-2xl font-bold text-white">{program.uatSupport.toFixed(1)}</p>
+                            <p className="text-xs text-green-100">days</p>
+                          </div>
+                          
+                          <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-4 rounded-lg border border-purple-500">
+                            <h4 className="text-sm font-medium text-purple-100 mb-1">Go-Live</h4>
+                            <p className="text-xs text-purple-200 mb-2">Conduct Go-live Activities</p>
+                            <p className="text-2xl font-bold text-white">{program.goLive.toFixed(1)}</p>
+                            <p className="text-xs text-purple-100">days</p>
+                          </div>
+
+                          <div className="bg-gradient-to-r from-orange-600 to-orange-700 p-4 rounded-lg border border-orange-500">
+                            <h4 className="text-sm font-medium text-orange-100 mb-1">Program Total</h4>
+                            <p className="text-xs text-orange-200 mb-2">Total effort for this program</p>
+                            <p className="text-2xl font-bold text-white">{program.total.toFixed(1)}</p>
+                            <p className="text-xs text-orange-100">days</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Overall Total Summary */}
+                    <div className="bg-slate-800 p-6 rounded-lg shadow-xl border border-slate-700">
+                      <h3 className="text-lg font-semibold text-white mb-4">Overall Project Summary</h3>
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4 rounded-lg border border-blue-500">
+                          <h4 className="text-sm font-medium text-blue-100 mb-1">Total Development</h4>
+                          <p className="text-xs text-blue-200 mb-2">All programs combined</p>
+                          <p className="text-2xl font-bold text-white">{totalSummary.developmentPhase.toFixed(1)}</p>
+                          <p className="text-xs text-blue-100">days</p>
+                        </div>
+                        
+                        <div className="bg-gradient-to-r from-green-600 to-green-700 p-4 rounded-lg border border-green-500">
+                          <h4 className="text-sm font-medium text-green-100 mb-1">Total UAT & Support</h4>
+                          <p className="text-xs text-green-200 mb-2">All programs combined</p>
+                          <p className="text-2xl font-bold text-white">{totalSummary.uatSupport.toFixed(1)}</p>
+                          <p className="text-xs text-green-100">days</p>
+                        </div>
+                        
+                        <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-4 rounded-lg border border-purple-500">
+                          <h4 className="text-sm font-medium text-purple-100 mb-1">Total Go-Live</h4>
+                          <p className="text-xs text-purple-200 mb-2">All programs combined</p>
+                          <p className="text-2xl font-bold text-white">{totalSummary.goLive.toFixed(1)}</p>
+                          <p className="text-xs text-purple-100">days</p>
+                        </div>
+
+                        <div className="bg-gradient-to-r from-red-600 to-red-700 p-4 rounded-lg border border-red-500">
+                          <h4 className="text-sm font-medium text-red-100 mb-1">Grand Total</h4>
+                          <p className="text-xs text-red-200 mb-2">Entire project effort</p>
+                          <p className="text-2xl font-bold text-white">{totalSummary.total.toFixed(1)}</p>
+                          <p className="text-xs text-red-100">days</p>
+                        </div>
+                      </div>
                     </div>
-                    
-                    <div className="bg-gradient-to-r from-green-600 to-green-700 p-6 rounded-lg shadow-xl border border-green-500">
-                      <h3 className="text-lg font-semibold text-white mb-2">UAT & Support</h3>
-                      <p className="text-sm text-green-100 mb-2">User Acceptance Testing & Support</p>
-                      <p className="text-3xl font-bold text-white">{summary.uatSupport.toFixed(1)}</p>
-                      <p className="text-sm text-green-100">days</p>
-                    </div>
-                    
-                    <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-6 rounded-lg shadow-xl border border-purple-500">
-                      <h3 className="text-lg font-semibold text-white mb-2">Go-Live</h3>
-                      <p className="text-sm text-purple-100 mb-2">Conduct Go-live Activities</p>
-                      <p className="text-3xl font-bold text-white">{summary.goLive.toFixed(1)}</p>
-                      <p className="text-sm text-purple-100">days</p>
-                    </div>
-                  </>
+                  </div>
                 );
               })()}
             </div>
 
-            {/* Total Summary */}
+            {/* Export Button */}
             <div className="bg-slate-800 p-4 rounded-lg shadow-xl border border-slate-700 mb-4">
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-white">Total Project Effort</h3>
-                  <p className="text-2xl font-bold text-blue-400">{calculateEffortSummary(tasks).total.toFixed(1)} days</p>
-                </div>
+              <div className="flex justify-end">
                 <button
                   onClick={exportToExcel}
                   className="bg-green-600 text-white py-2 px-6 rounded-md hover:bg-green-500 focus:outline-none focus:ring-2 focus:ring-green-400 focus:ring-offset-2 focus:ring-offset-slate-800 font-medium transition-colors duration-200 flex items-center gap-2"
@@ -719,25 +934,29 @@ export default function Home() {
               <table className="w-full border-collapse border border-slate-600">
                 <thead>
                   <tr className="bg-slate-700">
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">Task Name</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">Dependencies</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">Effort (Days)</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">Start Date</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">End Date</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">% Complete</th>
-                    <th className="border border-slate-600 px-4 py-2 text-left text-slate-200 font-medium">Resource Name</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Program</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Task Name</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Dependencies</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Effort (Days)</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Start Date</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">End Date</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">% Complete</th>
+                    <th className="border border-slate-600 px-6 py-3 text-left text-slate-200 font-medium">Resource Name</th>
                   </tr>
                 </thead>
                 <tbody>
                   {tasks.map((task) => (
                     <tr key={task.id} className="hover:bg-slate-700 transition-colors duration-200">
-                      <td className="border border-slate-600 px-4 py-2 font-medium text-white">
+                      <td className="border border-slate-600 px-6 py-3 text-slate-200 font-medium">
+                        {task.programName || '-'}
+                      </td>
+                      <td className="border border-slate-600 px-6 py-3 font-medium text-white">
                         {task.name}
                       </td>
-                      <td className="border border-slate-600 px-4 py-2 text-slate-200 text-sm">
+                      <td className="border border-slate-600 px-6 py-3 text-slate-200 text-sm">
                         {task.dependencies.length > 0 ? task.dependencies.join(', ') : '-'}
                       </td>
-                      <td className="border border-slate-600 px-4 py-2">
+                      <td className="border border-slate-600 px-6 py-3">
                         <input
                           type="text"
                           value={task.effortDisplay !== undefined ? task.effortDisplay : task.effort.toString()}
@@ -746,13 +965,13 @@ export default function Home() {
                           placeholder="0"
                         />
                       </td>
-                      <td className="border border-slate-600 px-4 py-2 text-slate-200">
+                      <td className="border border-slate-600 px-6 py-3 text-slate-200">
                         {task.startDate ? new Date(task.startDate).toLocaleDateString() : '-'}
                       </td>
-                      <td className="border border-slate-600 px-4 py-2 text-slate-200">
+                      <td className="border border-slate-600 px-6 py-3 text-slate-200">
                         {task.endDate ? new Date(task.endDate).toLocaleDateString() : '-'}
                       </td>
-                      <td className="border border-slate-600 px-4 py-2">
+                      <td className="border border-slate-600 px-6 py-3">
                         <input
                           type="text"
                           value={task.percentComplete}
@@ -766,7 +985,7 @@ export default function Home() {
                           placeholder="0%"
                         />
                       </td>
-                      <td className="border border-slate-600 px-4 py-2 text-slate-200">
+                      <td className="border border-slate-600 px-6 py-3 text-slate-200">
                         {task.resourceName || '-'}
                       </td>
                     </tr>
